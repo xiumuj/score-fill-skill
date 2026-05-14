@@ -583,12 +583,16 @@ ${State.scoreText}
       }
       for (const sid in rawMap) {
         const scores = rawMap[sid];
-        State.parsedScores[cls][sid] = scores[0]; // default = first occurrence
         if (scores.length > 1) {
           const unique = [...new Set(scores)];
           if (unique.length > 1) {
             State.conflicts[cls][sid] = scores;
+            State.parsedScores[cls][sid] = scores.join('/');
+          } else {
+            State.parsedScores[cls][sid] = scores[0];
           }
+        } else {
+          State.parsedScores[cls][sid] = scores[0];
         }
       }
     }
@@ -714,8 +718,11 @@ function doFill() {
     const sid = input.dataset.sid;
     const val = input.value.trim();
     if (!State.parsedScores[cls]) State.parsedScores[cls] = {};
-    if (val !== '') State.parsedScores[cls][sid] = Number(val);
-    else delete State.parsedScores[cls][sid];
+    if (val !== '') {
+      State.parsedScores[cls][sid] = val.includes('/') ? val : Number(val);
+    } else {
+      delete State.parsedScores[cls][sid];
+    }
   });
 
   State.filledWorkbooks = {};
