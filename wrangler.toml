@@ -1,0 +1,13 @@
+name = "score-fill-skill"
+compatibility_date = "2024-01-01"
+
+# 环境变量配置（部署时自动同步到 Cloudflare Pages）
+[vars]
+# 非敏感配置可以放在这里（如默认模型名称）
+MODEL = "glm-4-flash"
+BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+
+# ⚠️ 敏感信息（如 API_KEY）请使用以下方式设置：
+# 1. 在 Cloudflare Dashboard 中手动添加
+# 2. 使用命令: wrangler secret put API_KEY
+# 3. 通过 GitHub Actions Secrets（推荐）
