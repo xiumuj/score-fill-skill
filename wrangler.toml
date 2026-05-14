@@ -1,9 +1,9 @@
 name = "score-fill-skill"
 compatibility_date = "2024-01-01"
+pages_build_output_dir = "."
 
 # 环境变量配置（部署时自动同步到 Cloudflare Pages）
 [vars]
-# 非敏感配置可以放在这里（如默认模型名称）
 MODEL = "glm-4-flash"
 BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 
