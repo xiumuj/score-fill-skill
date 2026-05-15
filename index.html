@@ -188,6 +188,41 @@
         <input type="file" id="file_input" multiple accept=".xlsx,.xls" style="display:none">
       </div>
       <div class="file-list" id="file_list"></div>
+      <div class="table-example" style="margin-top:16px;padding:14px;background:var(--gray-50);border-radius:8px;border:1px solid var(--gray-200);">
+        <p style="font-size:.82rem;font-weight:600;color:var(--gray-700);margin-bottom:10px;">📋 表格格式示例（每个 Excel 文件只包含一个班级）：</p>
+        <div class="table-wrap">
+          <table class="result-table" style="font-size:.8rem;">
+            <tbody>
+              <tr>
+                <td style="background:var(--primary-bg);font-weight:600;color:var(--primary);">一班</td>
+                <td></td>
+                <td></td>
+              </tr>
+              <tr>
+                <th>学号</th>
+                <th>姓名</th>
+                <th></th>
+              </tr>
+              <tr>
+                <td>1</td>
+                <td>张三</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td>2</td>
+                <td>李四</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td>3</td>
+                <td>王五</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:.78rem;color:var(--gray-500);margin-top:10px;">说明：第1行为班级名称，第2行为表头（学号、姓名），第3行起为学生数据</p>
+      </div>
     </div>
 
     <div class="btn-group">
