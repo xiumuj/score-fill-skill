@@ -1,0 +1,20 @@
+{
+  "name": "score-fill-skill",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cf:dev": "wrangler pages dev dist --port 8788",
+    "cf:deploy": "wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

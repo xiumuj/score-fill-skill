@@ -1,49 +1,51 @@
-# === Cloudflare Deployment ===
-# Ignore everything by default
-/*
-
-# Allow Cloudflare Pages/Functions deployment files
-!functions/
-!index.html
-!wrangler.toml
-
-# Allow .gitignore itself
-!.gitignore
-
-# === Local Development ===
-# Local environment variables (contains secrets!)
-.dev.vars
-
-# Wrangler local development state
-.wrangler/
-
-# Vite build artifacts (if using Vite)
-.vite/
-dist/
-
-# Node.js dependencies
+# === Dependencies ===
 node_modules/
 package-lock.json
-npm-debug.log
+yarn.lock
+pnpm-lock.yaml
 
-# Python proxy (deprecated)
-proxy.py
-test-api.cjs
+# === Build output ===
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
 
-# Environment files
+# === Environment files ===
+.dev.vars
 .env
+.env.local
 .env.*.local
+.env.production
+.env.development
 
-# Logs
-*.log
+# === Local development ===
+.wrangler/
 
-# OS files
+# === OS files ===
 Thumbs.db
 .DS_Store
 *.swp
 *.swo
+._*
 
-# Editor directories
+# === Editor ===
 .idea/
 .vscode/
 *.code-workspace
+*.sublime-project
+*.sublime-workspace
+
+# === Logs ===
+*.log
+npm-debug.log
+npm-debug.log.*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log
+
+# === Cache ===
+.eslintcache
+
+# === Deprecated files ===
+proxy.py
+test-api.cjs
