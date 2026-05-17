@@ -603,33 +603,35 @@ async function doParse() {
   }, 1000);
 
   try {
-    // Strategy: ClassName-based prompt (shorter, doesn't send all IDs)
-    const classNames = State.uploadedFiles.map(f => f.className);
-    const prompt = `你是一个成绩解析专家。请严格按以下要求提取每位学生的学号和分数。
+    // 获取花名册中的班级列表
+    const excelClassNames = State.uploadedFiles.map(f => f.className);
+    
+    // 第一步：LLM 自主解析成绩文本，提取所有班级、学号、成绩
+    document.getElementById('parse_status').textContent = 'LLM 正在解析成绩文本...';
+    
+    const extractPrompt = `你是一个成绩解析专家。请从以下成绩文本中提取所有班级、学号和分数信息。
 
-成绩文本：
+## 成绩文本
 ${State.scoreText}
-
-班级名称列表（严格按这些名称输出）：${classNames.join('、')}
 
 ## 输出格式
 只输出一个纯粹的 JSON 对象，不要任何 markdown、注释或其他文字。key 为班级名称，value 为学号-分数对的**数组**（保留所有出现，不要合并去重）。示例：
 {"一班":[["1",5],["2",8]],"二班":[["12",6],["12",0]]}
 
-要求：
-- 每个出现的学号和分数都作为独立条目输出，不要合并去重
-- 学号用数字字符串
-- 分数用整数
-- 中文数字（一、二、两、三、十二等）转为阿拉伯数字
-- 班级名严格匹配给定的列表`;
-    document.getElementById('parse_status').textContent = 'LLM 正在生成回答...';
+## 要求
+1. 仔细分析成绩文本，识别所有提到的班级
+2. 每个班级的学生成绩用数组形式存储，每个条目为 [学号, 分数]
+3. 学号用数字字符串表示
+4. 分数用整数表示
+5. 中文数字（一、二、两、三、十二等）转为阿拉伯数字
+6. 保留所有出现的记录，不要合并去重
 
-    // Use streaming to show live progress
+请确保完整解析所有成绩信息！`;
+
     let fullResponse = '';
     const streamBox = document.getElementById('stream_box');
 
-    fullResponse = await callLLM(prompt, true, (chunk, accumulated) => {
-      // Update stream box with accumulated text
+    fullResponse = await callLLM(extractPrompt, true, (chunk, accumulated) => {
       const escaped = accumulated
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -639,25 +641,15 @@ ${State.scoreText}
       document.getElementById('token_count').textContent = '已接收 ' + accumulated.length + ' 字符';
     });
 
-    document.getElementById('parse_status').textContent = '正在解析结果...';
-
-    // Stop elapsed timer
-    if (State._parseElapsedTimer) {
-      clearInterval(State._parseElapsedTimer);
-      State._parseElapsedTimer = null;
-    }
-
-    // Parse JSON from response
+    // 解析 JSON
     let parsed;
     try {
       parsed = JSON.parse(fullResponse);
     } catch(e) {
-      // Try extracting JSON from code blocks
       const jsonMatch = fullResponse.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
       if (jsonMatch) {
         try { parsed = JSON.parse(jsonMatch[1]); } catch(e2) { throw new Error('JSON 格式错误（尝试从代码块提取失败）'); }
       } else {
-        // Try finding any top-level JSON object
         const objMatch = fullResponse.match(/\{[\s\S]*\}/);
         if (objMatch) {
           try { parsed = JSON.parse(objMatch[0]); } catch(e2) { throw new Error('JSON 格式错误（尝试从大括号提取失败）'); }
@@ -667,16 +659,63 @@ ${State.scoreText}
       }
     }
 
-    // Validate parsed structure
-    if (typeof parsed !== 'object' || parsed === null) throw new Error('解析结果不是有效的 JSON 对象');
-
-    // Check that at least one class was matched
-    const matchedClasses = Object.keys(parsed).filter(k => classNames.includes(k));
-    if (matchedClasses.length === 0) {
-      // Try fuzzy matching: find closest class names
-      const fuzzyHint = classNames.map(cn => `${cn}`).join(', ');
-      throw new Error(`LLM 返回的班级名与花名册不匹配。花名册班级：${fuzzyHint}，LLM 返回了：${Object.keys(parsed).join(', ')}`);
+    if (typeof parsed !== 'object' || parsed === null) {
+      throw new Error('解析结果不是有效的 JSON 对象');
     }
+
+    // 获取 LLM 解析出的所有班级
+    const parsedClassNames = Object.keys(parsed);
+    
+    // 第二步：与 Excel 花名册中的班级进行匹配
+    document.getElementById('parse_status').textContent = '正在与花名册班级匹配...';
+    
+    // 找出匹配的班级和未匹配的班级
+    const matchedClasses = parsedClassNames.filter(cls => excelClassNames.includes(cls));
+    const unmatchedFromParsed = parsedClassNames.filter(cls => !excelClassNames.includes(cls));
+    const unmatchedFromExcel = excelClassNames.filter(cls => !parsedClassNames.includes(cls));
+    
+    // 只保留与花名册匹配的班级数据
+    const matchedResult = {};
+    for (const cls of matchedClasses) {
+      matchedResult[cls] = parsed[cls];
+    }
+    
+    // 记录未匹配的信息供后续显示
+    State.unmatchedFromParsed = unmatchedFromParsed;
+    State.unmatchedFromExcel = unmatchedFromExcel;
+    
+    // 统计解析到的记录总数
+    let totalRecords = 0;
+    for (const cls in matchedResult) {
+      if (Array.isArray(matchedResult[cls])) {
+        totalRecords += matchedResult[cls].length;
+      }
+    }
+    
+    // 如果没有匹配到任何班级，给出警告
+    if (matchedClasses.length === 0) {
+      throw new Error(`未找到匹配的班级。\n\n成绩文本中解析到的班级：${parsedClassNames.join('、') || '无'}\n花名册中的班级：${excelClassNames.join('、')}\n\n请检查班级名称是否一致。`);
+    }
+    
+    // 输出匹配结果到控制台
+    console.log('=== 班级匹配结果 ===');
+    console.log('花名册班级:', excelClassNames);
+    console.log('解析到的班级:', parsedClassNames);
+    console.log('匹配成功:', matchedClasses);
+    console.log('成绩文本中有但花名册中没有:', unmatchedFromParsed);
+    console.log('花名册中有但成绩文本中没有:', unmatchedFromExcel);
+    console.log('解析到的记录总数:', totalRecords);
+
+    // Stop elapsed timer
+    if (State._parseElapsedTimer) {
+      clearInterval(State._parseElapsedTimer);
+      State._parseElapsedTimer = null;
+    }
+
+    document.getElementById('parse_status').textContent = '正在处理解析结果...';
+    
+    // 使用匹配后的结果进行后续处理
+    parsed = matchedResult;
 
     // Normalize: handle array-of-tuples (preserves duplicates)
     State.parsedScores = {};
@@ -755,6 +794,21 @@ function detectIssues() {
 function renderParseResults() {
   const el = document.getElementById('parse_results');
   let html = '';
+
+  // 添加未匹配班级的提示
+  if (State.unmatchedFromParsed && State.unmatchedFromParsed.length > 0) {
+    html += `<div class="alert alert-warning" style="margin-bottom:16px;">
+      <strong>⚠️ 注意：</strong>成绩文本中解析到以下班级，但花名册中没有对应的班级：
+      <span style="font-weight:bold;">${State.unmatchedFromParsed.join('、')}</span>
+    </div>`;
+  }
+  
+  if (State.unmatchedFromExcel && State.unmatchedFromExcel.length > 0) {
+    html += `<div class="alert alert-info" style="margin-bottom:16px;">
+      <strong>ℹ️ 提示：</strong>花名册中有以下班级，但成绩文本中未找到对应的成绩：
+      <span style="font-weight:bold;">${State.unmatchedFromExcel.join('、')}</span>
+    </div>`;
+  }
 
   State.uploadedFiles.forEach(f => {
     const cls = f.className;
