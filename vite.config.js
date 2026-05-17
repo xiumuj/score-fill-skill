@@ -1,13 +1,11 @@
 import { defineConfig, loadEnv } from 'vite'
+import { sendLLMRequest, parseNonStreamResponse, parseSSEChunk } from './lib/llm-api.js'
 
 function createApiHandler(env) {
+  const { API_KEY, BASE_URL, MODEL } = env
+
   return async (req, res, next) => {
-    if (req.url !== '/api/chat' || req.method !== 'POST') {
-      return next()
-    }
-
-    const { API_KEY, BASE_URL, MODEL } = env
-
+    if (req.url !== '/api/chat' || req.method !== 'POST') return next()
     if (!API_KEY || !BASE_URL) {
       res.statusCode = 500
       res.setHeader('Content-Type', 'application/json')
@@ -20,19 +18,7 @@ function createApiHandler(env) {
       for await (const chunk of req) chunks.push(chunk)
       const { message, stream } = JSON.parse(Buffer.concat(chunks).toString())
 
-      const llmResp = await fetch(`${BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: MODEL || 'deepseek-chat',
-          temperature: 0,
-          stream: !!stream,
-          messages: [{ role: 'user', content: message }],
-        }),
-      })
+      const llmResp = await sendLLMRequest(API_KEY, BASE_URL, MODEL, message, stream)
 
       if (!llmResp.ok) {
         const data = await llmResp.json().catch(() => ({}))
@@ -59,7 +45,7 @@ function createApiHandler(env) {
         pump().catch(() => res.end())
       } else {
         const data = await llmResp.json()
-        const content = data.choices?.[0]?.message?.content || ''
+        const content = parseNonStreamResponse(data)
         res.setHeader('Content-Type', 'application/json')
         res.end(JSON.stringify({ content }))
       }
@@ -73,16 +59,13 @@ function createApiHandler(env) {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-
   return {
-    plugins: [
-      {
-        name: 'api-handler',
-        configureServer(server) {
-          server.middlewares.use(createApiHandler(env))
-        },
+    plugins: [{
+      name: 'api-handler',
+      configureServer(server) {
+        server.middlewares.use(createApiHandler(env))
       },
-    ],
+    }],
     build: {
       outDir: 'dist',
       emptyOutDir: true,
