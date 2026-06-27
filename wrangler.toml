@@ -12,10 +12,16 @@ BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
 # 2. 使用命令: wrangler secret put API_KEY
 # 3. 通过 GitHub Actions Secrets（推荐）
 
-# 讯飞实时语音转写大模型版 (RTASR LLM)
-# 同样为敏感信息, 请勿写入本文件。使用以下命令设置:
+# 讯飞实时语音转写大模型版 (RTASR LLM) — 备用
 #   wrangler pages secret put XF_APP_ID
 #   wrangler pages secret put XF_ACCESS_KEY_ID
 #   wrangler pages secret put XF_ACCESS_KEY_SECRET
 # 文档: https://www.xfyun.cn/doc/spark/asr_llm/rtasr_llm.html
+
+# 腾讯云实时语音识别 (ASR) — 主用
+# 云端设置:
+#   wrangler pages secret put TENCENT_APP_ID
+#   wrangler pages secret put TENCENT_SECRET_ID
+#   wrangler pages secret put TENCENT_SECRET_KEY
+# 文档: https://cloud.tencent.com/document/product/1093/48982
 

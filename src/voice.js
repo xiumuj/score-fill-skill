@@ -3,6 +3,7 @@ const SILENCE_TIMEOUT = 10000
 const Voice = {
   active: false,
   ws: null,
+  provider: null,
   mediaStream: null,
   audioCtx: null,
   processor: null,
@@ -66,7 +67,6 @@ function onAudioProcess(e) {
     let s = Math.max(-1, Math.min(1, float32[i]))
     int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
   }
-  const frameSamples = 640
   const bytes = new Uint8Array(int16.buffer)
   for (let i = 0; i < bytes.length; i += 1280) {
     const slice = bytes.slice(i, i + 1280)
@@ -99,7 +99,7 @@ function onWsOpen() {
   resetSilenceTimer()
 }
 
-function extractSentence(st) {
+function extractXunfeiSentence(st) {
   let text = ''
   const rts = st.rt || []
   for (const rt of rts) {
@@ -114,7 +114,7 @@ function extractSentence(st) {
   return text
 }
 
-function onAsrMessage(ev) {
+function onXunfeiMessage(ev) {
   let msg
   try { msg = JSON.parse(ev.data) } catch (e) { return }
 
@@ -145,7 +145,7 @@ function onAsrMessage(ev) {
   const st = result?.cn?.st
   if (!st) return
 
-  const sentence = extractSentence(st)
+  const sentence = extractXunfeiSentence(st)
   const type = st.type
 
   if (type === '1') {
@@ -158,6 +158,37 @@ function onAsrMessage(ev) {
   renderTranscript()
 }
 
+function onTencentMessage(ev) {
+  let msg
+  try { msg = JSON.parse(ev.data) } catch (e) { return }
+
+  if (msg.code !== 0) {
+    setVoiceStatus('腾讯错误: ' + (msg.message || JSON.stringify(msg)), 'error')
+    return
+  }
+
+  if (msg.final === 1) return
+
+  const result = msg.result
+  if (!result) return
+
+  const text = result.voice_text_str || ''
+
+  if (result.slice_type === 1) {
+    Voice.interimText = text
+  } else if (result.slice_type === 2) {
+    if (text) {
+      Voice.finalText += text
+      Voice.interimText = ''
+    }
+  } else if (result.slice_type === 0) {
+    Voice.interimText = text || Voice.interimText
+  }
+
+  if (text) resetSilenceTimer()
+  renderTranscript()
+}
+
 export async function toggleVoice() {
   if (Voice.active) { stopVoice(); return }
   const ok = await window.showConfirm('录音额度有限，建议使用手机自带语音输入法在成绩文本框中输入，是否继续录音？')
@@ -165,20 +196,33 @@ export async function toggleVoice() {
   await startVoice()
 }
 
+async function fetchWsUrl(url) {
+  const resp = await fetch(url, { method: 'POST' })
+  const data = await resp.json()
+  if (!resp.ok) throw new Error(data.error || '鉴权失败')
+  return data.wsUrl
+}
+
 async function startVoice() {
   if (!window.State.uploadedFiles.length) { alert('请先上传花名册，再开始语音录入'); return }
 
-  setVoiceStatus('鉴权中...', '')
-  let wsUrl
+  setVoiceStatus('鉴权中（腾讯云）...', '')
+  let wsUrl, provider
   try {
-    const resp = await fetch('/api/xf-sign', { method: 'POST' })
-    const data = await resp.json()
-    if (!resp.ok) throw new Error(data.error || '鉴权失败')
-    wsUrl = data.wsUrl
-  } catch (e) {
-    setVoiceStatus('鉴权失败: ' + e.message, '')
-    return
+    wsUrl = await fetchWsUrl('/api/tx-sign')
+    provider = 'tencent'
+  } catch (e1) {
+    setVoiceStatus('腾讯云鉴权失败，尝试讯飞...', '')
+    try {
+      wsUrl = await fetchWsUrl('/api/xf-sign')
+      provider = 'xunfei'
+    } catch (e2) {
+      setVoiceStatus('所有语音服务均不可用: ' + e2.message, 'error')
+      return
+    }
   }
+
+  Voice.provider = provider
 
   setVoiceStatus('连接麦克风...', '')
   try {
@@ -190,7 +234,7 @@ async function startVoice() {
     return
   }
 
-  setVoiceStatus('连接讯飞...', '')
+  setVoiceStatus('连接语音服务...', '')
   Voice.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
   if (Voice.audioCtx.state === 'suspended') await Voice.audioCtx.resume()
   Voice.source = Voice.audioCtx.createMediaStreamSource(Voice.mediaStream)
@@ -207,7 +251,7 @@ async function startVoice() {
     return
   }
   Voice.ws.onopen = onWsOpen
-  Voice.ws.onmessage = onAsrMessage
+  Voice.ws.onmessage = provider === 'tencent' ? onTencentMessage : onXunfeiMessage
   Voice.ws.onerror = () => {
     setVoiceStatus('WebSocket 连接失败', 'error')
     Voice.active = false
@@ -237,7 +281,10 @@ function stopVoice() {
   if (Voice.ws) {
     try {
       if (Voice.ws.readyState === WebSocket.OPEN) {
-        Voice.ws.send(JSON.stringify({ end: true, sessionId: Voice.sessionId || '' }))
+        const stopMsg = Voice.provider === 'tencent'
+          ? JSON.stringify({ type: 'end' })
+          : JSON.stringify({ end: true, sessionId: Voice.sessionId || '' })
+        Voice.ws.send(stopMsg)
       }
       Voice.ws.close()
     } catch (e) {}
@@ -258,6 +305,7 @@ function stopVoice() {
     setVoiceStatus('✅ 已转录到文本框，可编辑后点击"开始解析"', '')
     document.getElementById('btn_parse').scrollIntoView({ behavior: 'smooth' })
   }
+  Voice.provider = null
 }
 
 window.toggleVoice = toggleVoice
