@@ -1,3 +1,5 @@
+const SILENCE_TIMEOUT = 10000
+
 const Voice = {
   active: false,
   ws: null,
@@ -11,7 +13,8 @@ const Voice = {
   elapsedSec: 0,
   interimText: '',
   finalText: '',
-  sessionId: null
+  sessionId: null,
+  silenceTimer: null
 }
 
 window.Voice = Voice
@@ -38,12 +41,21 @@ function escapeHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
+function resetSilenceTimer() {
+  if (Voice.silenceTimer) clearTimeout(Voice.silenceTimer)
+  Voice.silenceTimer = setTimeout(() => {
+    setVoiceStatus('🛑 10秒无语音输入，已自动停止', '')
+    stopVoice()
+  }, SILENCE_TIMEOUT)
+}
+
 function cleanupVoice() {
   if (Voice.processor) { try { Voice.processor.disconnect() } catch(e){} Voice.processor = null }
   if (Voice.source) { try { Voice.source.disconnect() } catch(e){} Voice.source = null }
   if (Voice.audioCtx) { try { Voice.audioCtx.close() } catch(e){} Voice.audioCtx = null }
   if (Voice.mediaStream) { Voice.mediaStream.getTracks().forEach(t => t.stop()); Voice.mediaStream = null }
   Voice.pcmQueue = []
+  Voice.silenceTimer = null
 }
 
 function onAudioProcess(e) {
@@ -83,6 +95,8 @@ function onWsOpen() {
     Voice.elapsedSec++
     document.getElementById('voice_timer').textContent = '⏱ ' + Voice.elapsedSec + 's'
   }, 1000)
+
+  resetSilenceTimer()
 }
 
 function extractSentence(st) {
@@ -140,6 +154,7 @@ function onAsrMessage(ev) {
     Voice.finalText += sentence
     Voice.interimText = ''
   }
+  if (sentence) resetSilenceTimer()
   renderTranscript()
 }
 
@@ -214,6 +229,7 @@ function stopVoice() {
 
   if (Voice.sendTimer) { clearInterval(Voice.sendTimer); Voice.sendTimer = null }
   if (Voice.elapsedTimer) { clearInterval(Voice.elapsedTimer); Voice.elapsedTimer = null }
+  if (Voice.silenceTimer) { clearTimeout(Voice.silenceTimer); Voice.silenceTimer = null }
 
   if (Voice.ws) {
     try {
