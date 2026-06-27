@@ -218,3 +218,29 @@ window.renderExportList = renderExportList
 window.renderTranscript = renderTranscript
 window.escapeHtml = escapeHtml
 window.setVoiceStatus = setVoiceStatus
+
+let _modalCallback = null
+
+export function showConfirm(text) {
+  return new Promise(resolve => {
+    _modalCallback = resolve
+    document.getElementById('modal_text').textContent = text
+    document.getElementById('modal_overlay').classList.add('open')
+    document.getElementById('modal_btn_confirm').onclick = () => {
+      closeModal()
+      resolve(true)
+    }
+    document.getElementById('modal_btn_cancel').onclick = () => {
+      closeModal()
+      resolve(false)
+    }
+  })
+}
+
+export function closeModal(ev) {
+  if (ev && ev.target !== document.getElementById('modal_overlay')) return
+  document.getElementById('modal_overlay').classList.remove('open')
+}
+
+window.showConfirm = showConfirm
+window.closeModal = closeModal

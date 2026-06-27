@@ -159,7 +159,10 @@ function onAsrMessage(ev) {
 }
 
 export async function toggleVoice() {
-  if (Voice.active) { stopVoice() } else { await startVoice() }
+  if (Voice.active) { stopVoice(); return }
+  const ok = await window.showConfirm('录音额度有限，建议使用手机自带语音输入法在成绩文本框中输入，是否继续录音？')
+  if (!ok) return
+  await startVoice()
 }
 
 async function startVoice() {

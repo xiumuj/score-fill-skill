@@ -148,3 +148,15 @@ textarea { resize:vertical; min-height:160px; }
 .voice-transcript .voice-hint { color:#6c7086; font-size:.85rem; }
 .voice-transcript .interim { opacity:.5; }
 .voice-transcript .final { font-weight:600; }
+
+.modal-overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+  z-index:1000; align-items:center; justify-content:center; padding:20px;
+}
+.modal-overlay.open { display:flex; }
+.modal-box {
+  background:#fff; border-radius:12px; padding:28px 24px 20px;
+  max-width:400px; width:100%; box-shadow:0 20px 60px rgba(0,0,0,.2);
+}
+.modal-text { font-size:.95rem; line-height:1.7; color:var(--gray-700); margin-bottom:22px; }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; }
