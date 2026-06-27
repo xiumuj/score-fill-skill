@@ -190,7 +190,7 @@
 
 <div class="container">
 
-  <!-- ===== Step 1: Input Data ===== -->
+  <!-- Step 1: Input Data -->
   <div class="step-panel active" id="panel1">
 
     <!-- ===== Upload Roster (最上方) ===== -->
@@ -271,7 +271,7 @@
     </div>
   </div>
 
-  <!-- ===== Step 1.5: Parse Progress ===== -->
+  <!-- Step 1.5: Parse Progress -->
   <div class="step-panel" id="panel_parse">
     <div class="card">
       <h2>🤖 LLM 解析中</h2>
@@ -284,13 +284,13 @@
         <div class="stream-box" id="stream_box"><span class="cursor"></span></div>
         <div class="progress-footer">
           <span class="token-count" id="token_count">已接收 0 字符</span>
-          <button class="btn btn-sm btn-danger" onclick="cancelParse()">✕ 取消</button>
+          <button class="btn btn-sm btn-danger" id="btn_cancel_parse">✕ 取消</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ===== Step 2: Confirm Parse Results ===== -->
+  <!-- Step 2: Confirm Parse Results -->
   <div class="step-panel" id="panel2">
     <div class="card">
       <h2>✅ 确认解析结果</h2>
@@ -300,20 +300,20 @@
       <div id="parse_results"></div>
     </div>
     <div class="btn-group">
-      <button class="btn btn-outline" onclick="goStep(1)">← 上一步</button>
-      <button class="btn btn-success" onclick="doFill()">✅ 确认并填入花名册</button>
+      <button class="btn btn-outline" id="btn_back_to_step1">← 上一步</button>
+      <button class="btn btn-success" id="btn_confirm_fill">✅ 确认并填入花名册</button>
     </div>
   </div>
 
-  <!-- ===== Step 3: Export ===== -->
+  <!-- Step 3: Export -->
   <div class="step-panel" id="panel3">
     <div class="card">
       <h2>📦 导出结果</h2>
       <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:14px;">点击下方按钮下载已填入成绩的花名册文件。</p>
       <div id="export_list"></div>
       <div class="btn-group" style="margin-top:20px;">
-        <button class="btn btn-primary" onclick="downloadAllZip()">📦 一键下载全部 ZIP</button>
-        <button class="btn btn-outline" onclick="goStep(2)">← 返回修改</button>
+        <button class="btn btn-primary" id="btn_download_zip">📦 一键下载全部 ZIP</button>
+        <button class="btn btn-outline" id="btn_back_to_step2">← 返回修改</button>
       </div>
     </div>
   </div>

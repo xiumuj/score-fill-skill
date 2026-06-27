@@ -1,5 +1,7 @@
+import { sendLLMRequest, parseNonStreamResponse } from '../../lib/llm-api.js'
+
 export async function onRequest({ request, env }) {
-  const { API_KEY, BASE_URL, MODEL } = env;
+  const { API_KEY, BASE_URL, MODEL } = env
 
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
@@ -16,9 +18,8 @@ export async function onRequest({ request, env }) {
   }
 
   try {
-    const body = await request.json();
-    const userMessage = body.message || '';
-    const stream = body.stream || false;
+    const { message, stream } = await request.json()
+    const llmResp = await sendLLMRequest(API_KEY, BASE_URL, MODEL, message, stream)
 
     const response = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
@@ -40,16 +41,15 @@ export async function onRequest({ request, env }) {
       let data;
       try { data = JSON.parse(raw); } catch(e) { data = {}; }
       return new Response(JSON.stringify({
-        error: data.error?.message || `HTTP ${response.status}`
+        error: data.error?.message || `HTTP ${llmResp.status}`,
       }), {
         status: response.status,
         headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
     }
 
-    if (stream && response.body) {
-      // Streaming response
-      return new Response(response.body, {
+    if (stream && llmResp.body) {
+      return new Response(llmResp.body, {
         status: 200,
         headers: {
           'Content-Type': 'text/event-stream',
@@ -68,6 +68,12 @@ export async function onRequest({ request, env }) {
         headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
     }
+
+    const data = await llmResp.json()
+    const content = parseNonStreamResponse(data)
+    return new Response(JSON.stringify({ content }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })
 
   } catch (error) {
     return new Response(JSON.stringify({
