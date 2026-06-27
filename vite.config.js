@@ -120,7 +120,7 @@ function createTxSignHandler(env) {
         timestamp: String(now),
         expired: String(now + 86400),
         nonce: String(Math.floor(Math.random() * 10000000000)),
-        engine_model_type: '16k_zh_en',
+        engine_model_type: '16k_zh',
         voice_id: randomUUID(),
         voice_format: '1',
         needvad: '1',
