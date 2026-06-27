@@ -25,7 +25,7 @@ npm run cf:deploy # 部署到 Cloudflare Pages
 | 文件 | 用途 | 提交? |
 |---|---|---|
 | `.env` | Vite 读取 (包括 API_KEY/BASE_URL/MODEL) | 否 (gitignore) |
-| `.dev.vars` | `wrangler pages dev` 读取 | 否 (gitignore) |
+| `.dev.vars` | `wrangler pages dev --env-file .dev.vars` 读取 | 否 (gitignore) |
 | `wrangler.toml [vars]` | 生产环境非敏感默认值 (不含 API_KEY) | 是 |
 
 - **API_KEY 永远不要**写入 `wrangler.toml` 或提交到 Git
@@ -35,20 +35,22 @@ npm run cf:deploy # 部署到 Cloudflare Pages
 ## 项目结构关键点
 
 ```
-├── index.html            # Vite 入口 HTML, 仅有结构和模块 script 标签
-├── lib/
-│   └── llm-api.js        # LLM 请求构建/SSE解析 (vite + CF 共享)
+├── index.html            # Vite 入口 HTML, 结构 ~170 行, 无内联 CSS/JS
 ├── src/
-│   ├── main.js           # 启动: 导入 style.css, 注册事件, 暴露 window 全局函数
-│   ├── state.js          # 集中状态 (State 单例)
-│   ├── chat.js           # callLLM() fetch /api/chat + SSE 流式解析
-│   ├── parse.js          # doParse() LLM 解析编排 + 数据归一化
-│   ├── render.js         # 冲突/缺失检测 + 结果渲染
-│   ├── upload.js         # Excel 拖拽/上传 + XLSX 解析
-│   ├── export.js         # 填成绩 + 生成 XLSX + ZIP 打包下载
-│   ├── ui.js             # goStep / toggleSection / showMsg
-│   └── cancelParse.js    # 取消解析 (中断 fetch + 清理定时器)
-├── functions/api/chat.js # Cloudflare Functions 后端 (生产部署使用)
+│   ├── main.js           # 入口: import 所有模块, 初始化事件绑定
+│   ├── style.css          # 全部样式 (<link rel="stylesheet" href="/src/style.css">)
+│   ├── state.js           # 集中状态 (State 单例, window.State)
+│   ├── ui.js              # 全部 DOM 操作: 导航/渲染/消息/进度面板
+│   ├── llm.js             # callLLM() + testLLM() (fetch /api/chat + SSE 解析)
+│   ├── upload.js          # Excel 拖拽/上传 + XLSX 解析 (写 State)
+│   ├── voice.js           # 录音控制 + 讯飞 WSS ASR (Voice 内部状态)
+│   ├── parse.js           # doParse() 编排: 调 LLM → 归一化 → 冲突检测
+│   ├── export.js          # 填成绩 + 生成 XLSX + ZIP 打包下载
+│   └── cancel.js          # 取消解析 (中断 fetch + 清理定时器)
+├── lib/
+│   └── llm-api.js        # LLM 请求构建 (vite + CF 共享)
+├── functions/api/chat.js # Cloudflare Functions LLM 代理 (生产部署)
+├── functions/api/xf-sign.js # Cloudflare Functions 讯飞签名接口
 └── vite.config.js        # api-handler 插件 + 构建配置
 ```
 
