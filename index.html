@@ -146,6 +146,25 @@
     .step-line { width:20px; }
     .step-label { display:none; }
   }
+
+  /* ===== Voice Input ===== */
+  .voice-controls { display:flex; align-items:center; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+  .voice-status { font-size:.85rem; color:var(--gray-500); }
+  .voice-status.recording { color:var(--danger); font-weight:600; }
+  .voice-status.listening { color:var(--primary); font-weight:600; }
+  .voice-timer { font-size:.82rem; color:var(--gray-500); font-family:monospace; }
+  #btn_voice.recording { background:var(--danger); animation:voicePulse 1.5s ease-in-out infinite; }
+  @keyframes voicePulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5);} 50%{box-shadow:0 0 0 10px rgba(239,68,68,0);} }
+
+  .voice-section { margin-bottom:14px; }
+  .voice-transcript {
+    background:#1e1e2e; color:#cdd6f4; border-radius:8px; padding:14px;
+    font-size:.9rem; min-height:80px; max-height:200px; overflow-y:auto;
+    white-space:pre-wrap; word-break:break-all; line-height:1.6;
+  }
+  .voice-transcript .voice-hint { color:#6c7086; font-size:.85rem; }
+  .voice-transcript .interim { opacity:.5; } /* type=1 中间结果 */
+  .voice-transcript .final { font-weight:600; } /* type=0 确定结果 */
 </style>
 </head>
 <body>
@@ -173,12 +192,8 @@
 
   <!-- ===== Step 1: Input Data ===== -->
   <div class="step-panel active" id="panel1">
-    <div class="card">
-      <h2>📝 成绩文本</h2>
-      <label>粘贴语音转文字成绩文本</label>
-      <textarea id="score_text" placeholder="示例：&#10;一班 1号5分 2号8分 3号10分 ...&#10;二班 1号3分 2号7分 ..."></textarea>
-    </div>
 
+    <!-- ===== Upload Roster (最上方) ===== -->
     <div class="card">
       <h2>📂 上传花名册</h2>
       <div class="drop-zone" id="drop_zone">
@@ -225,7 +240,33 @@
       </div>
     </div>
 
+    <!-- ===== Voice Input ===== -->
+    <div class="card">
+      <h2>🎤 实时语音录入</h2>
+      <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:14px;">念出"学号+分数"，如"31号77分"。停止录音后文本自动填入下方文本框，可手动修正识别错误，然后点击"开始解析"提取成绩。</p>
+
+      <div class="voice-controls">
+        <button class="btn btn-primary" id="btn_voice" onclick="toggleVoice()">🎤 开始录音</button>
+        <span class="voice-status" id="voice_status">就绪</span>
+        <span class="voice-timer" id="voice_timer"></span>
+      </div>
+
+      <div class="voice-section">
+        <label>实时转写</label>
+        <div class="voice-transcript" id="voice_transcript"><span class="voice-hint">点击"开始录音"后，这里会实时显示识别到的文字</span></div>
+      </div>
+    </div>
+
+    <!-- ===== Score Text (最下方) ===== -->
+    <div class="card">
+      <h2>📝 成绩文本</h2>
+      <label>粘贴或语音录入的成绩文本</label>
+      <textarea id="score_text" placeholder="示例：&#10;一班 1号5分 2号8分 3号10分 ...&#10;二班 1号3分 2号7分 ..."></textarea>
+    </div>
+
     <div class="btn-group">
+      <button class="btn btn-outline" id="btn_test_llm" onclick="testLLM()">🔌 检测 LLM</button>
+      <span id="llm_status" style="font-size:.85rem;color:var(--gray-500);align-self:center;"></span>
       <button class="btn btn-primary" id="btn_parse" onclick="doParse()">🚀 开始解析</button>
     </div>
   </div>
@@ -234,7 +275,7 @@
   <div class="step-panel" id="panel_parse">
     <div class="card">
       <h2>🤖 LLM 解析中</h2>
-      <div class="parse-progress active">
+      <div class="parse-progress">
         <div class="status-bar">
           <span class="spinner"></span>
           <span class="status-text" id="parse_status">正在请求 LLM...</span>
@@ -283,6 +324,7 @@
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <!-- JSZip -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<!-- pinyin-pro (拼音模糊匹配) -->
 
 <script>
 // ===================== State =====================
@@ -294,8 +336,27 @@ const State = {
   conflicts: {},
   missing: {},
   filledWorkbooks: {},
+  matchMethod: {},         // { 班级: { 学号: 'exact'|'pinyin'|'llm' } } 语音匹配方式
   _abortController: null,
   _parseElapsedTimer: null
+};
+
+// ===================== Voice (实时语音录入) =====================
+// 完整流程: getUserMedia → 16k PCM(1280B/40ms) → 直连讯飞 wss → ASR 流式文本
+//          → L1 本地姓名纠错(实时显示) → L2 LLM 纠错+提取分数(防抖) → 写入 parsedScores
+const Voice = {
+  active: false,            // 是否正在录音
+  ws: null,                 // WebSocket 连接
+  mediaStream: null,        // getUserMedia 流
+  audioCtx: null,           // AudioContext(16k)
+  processor: null,          // ScriptProcessorNode
+  source: null,             // MediaStreamAudioSourceNode
+  sendTimer: null,          // 40ms 定时发送
+  pcmQueue: [],             // 待发送的 1280B PCM 切片队列
+  elapsedTimer: null,       // 计时器
+  elapsedSec: 0,
+  interimText: '',          // 当前中间句(type=1, 未定稿)
+  finalText: '',            // 已确定句(type=0)累加
 };
 
 // ===================== LLM (via backend proxy) =====================
@@ -304,8 +365,31 @@ const State = {
  * @param {string} userMsg - The user message content
  * @param {boolean} stream - Whether to use streaming
  * @param {function} onChunk - Callback for each text chunk (streaming only)
- * @returns {Promise<string>} Full response text
- */
+  * @returns {Promise<string>} Full response text
+  */
+async function testLLM() {
+  const btn = document.getElementById('btn_test_llm');
+  const status = document.getElementById('llm_status');
+  btn.disabled = true;
+  status.innerHTML = '⏳ 测试中...';
+  status.style.color = 'var(--gray-500)';
+  try {
+    const resp = await callLLM('回复"ok"即可', false);
+    if (resp && resp.length > 0) {
+      status.innerHTML = '✅ LLM 连通';
+      status.style.color = 'var(--success)';
+    } else {
+      status.innerHTML = '⚠️ 响应为空';
+      status.style.color = 'var(--warning)';
+    }
+  } catch (e) {
+    status.innerHTML = '❌ ' + e.message.slice(0, 30);
+    status.style.color = 'var(--danger)';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function callLLM(userMsg, stream, onChunk) {
   const controller = new AbortController();
   State._abortController = controller;
@@ -388,6 +472,254 @@ function cancelParse() {
   goStep(1);
 }
 
+// ===================== Voice: 录音控制 =====================
+async function toggleVoice() {
+  if (Voice.active) { stopVoice(); } else { await startVoice(); }
+}
+
+async function startVoice() {
+  if (!State.uploadedFiles.length) { alert('请先上传花名册，再开始语音录入'); return; }
+
+  // 1) 请求签名
+  setVoiceStatus('鉴权中...', '');
+  let wsUrl;
+  try {
+    const resp = await fetch('/api/xf-sign', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || '鉴权失败');
+    wsUrl = data.wsUrl;
+  } catch (e) {
+    setVoiceStatus('鉴权失败: ' + e.message, '');
+    return;
+  }
+
+  // 2) 打开麦克风
+  setVoiceStatus('连接麦克风...', '');
+  try {
+    Voice.mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (e) {
+    setVoiceStatus('无法访问麦克风: ' + e.message, '');
+    return;
+  }
+
+  // 3) 建立 AudioContext(16k) + ScriptProcessor
+  setVoiceStatus('连接讯飞...', '');
+  Voice.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  // iOS Safari 需要用户手势触发 resume
+  if (Voice.audioCtx.state === 'suspended') await Voice.audioCtx.resume();
+  Voice.source = Voice.audioCtx.createMediaStreamSource(Voice.mediaStream);
+  // bufferSize=4096 在 16k 下约 256ms, 内部累积后按 1280B 切片
+  Voice.processor = Voice.audioCtx.createScriptProcessor(4096, 1, 1);
+  Voice.processor.onaudioprocess = onAudioProcess;
+  Voice.source.connect(Voice.processor);
+  Voice.processor.connect(Voice.audioCtx.destination);
+
+  // 4) 连接讯飞 wss
+  try {
+    Voice.ws = new WebSocket(wsUrl);
+  } catch (e) {
+    setVoiceStatus('WebSocket 创建失败: ' + e.message, '');
+    cleanupVoice();
+    return;
+  }
+  Voice.ws.onopen = onWsOpen;
+  Voice.ws.onmessage = onAsrMessage;
+  Voice.ws.onerror = () => {
+    setVoiceStatus('WebSocket 连接失败', 'error');
+    Voice.active = false;
+    if (Voice.sendTimer) { clearInterval(Voice.sendTimer); Voice.sendTimer = null; }
+    if (Voice.elapsedTimer) { clearInterval(Voice.elapsedTimer); Voice.elapsedTimer = null; }
+    cleanupVoice();
+  };
+  Voice.ws.onclose = (ev) => {
+    const reason = ev.reason ? ' (' + ev.reason + ')' : '';
+    setVoiceStatus('连接已断开(code=' + ev.code + reason + ')', ev.code !== 1000 ? 'error' : '');
+    Voice.active = false;
+    if (Voice.sendTimer) { clearInterval(Voice.sendTimer); Voice.sendTimer = null; }
+    if (Voice.elapsedTimer) { clearInterval(Voice.elapsedTimer); Voice.elapsedTimer = null; }
+    if (ev.code !== 1000) cleanupVoice();
+    Voice.ws = null;
+  };
+}
+
+function onWsOpen() {
+  Voice.active = true;
+  setVoiceStatus('识别中...', 'recording');
+  document.getElementById('btn_voice').classList.add('recording');
+  document.getElementById('btn_voice').innerHTML = '⏹ 停止录音';
+  // 重置转写状态
+  Voice.interimText = ''; Voice.finalText = '';
+  renderTranscript();
+
+  // 5) 40ms 定时从队列发送 1280B PCM (讯飞要求每 40ms 发一帧)
+  Voice.pcmQueue = [];
+  Voice.sendTimer = setInterval(() => {
+    if (!Voice.ws || Voice.ws.readyState !== WebSocket.OPEN) return;
+    while (Voice.pcmQueue.length) {
+      Voice.ws.send(Voice.pcmQueue.shift());
+    }
+  }, 40);
+
+  // 计时器
+  Voice.elapsedSec = 0;
+  Voice.elapsedTimer = setInterval(() => {
+    Voice.elapsedSec++;
+    document.getElementById('voice_timer').textContent = '⏱ ' + Voice.elapsedSec + 's';
+  }, 1000);
+}
+
+// ScriptProcessor 回调: Float32 → Int16 PCM, 按 1280B 切片入队
+function onAudioProcess(e) {
+  if (!Voice.active) return;
+  const float32 = e.inputBuffer.getChannelData(0);
+  // 转为 Int16
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    let s = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  // 切成 1280 字节(640 个采样)的帧
+  const frameSamples = 640; // 1280 / 2
+  const bytes = new Uint8Array(int16.buffer);
+  for (let i = 0; i < bytes.length; i += 1280) {
+    const slice = bytes.slice(i, i + 1280);
+    if (slice.length === 1280) Voice.pcmQueue.push(slice.buffer);
+  }
+}
+
+// ===================== Voice: ASR 消息解析 =====================
+// 讯飞返回结构: action=started | result | error
+// result 的 data.cn.st.rt.ws.cw.w 为词; data.cn.st.type=0 确定 / 1 中间
+function onAsrMessage(ev) {
+  let msg;
+  try { msg = JSON.parse(ev.data); } catch (e) { return; }
+
+  if (msg.sid) Voice.sessionId = msg.sid;
+
+  // 先处理错误（兼容 action 和 msg_type 两种格式）
+  if (msg.action === 'error') {
+    setVoiceStatus('讯飞错误: ' + (msg.desc || JSON.stringify(msg.data || {})), 'error');
+    return;
+  }
+  if (msg.msg_type === 'error') {
+    setVoiceStatus('讯飞错误: ' + (msg.desc || JSON.stringify(msg.data || {})), 'error');
+    return;
+  }
+  if (msg.msg_type === 'result' && msg.res_type === 'frc') {
+    setVoiceStatus('讯飞错误: ' + (msg.data?.desc || '功能异常'), 'error');
+    return;
+  }
+
+  // 非结果消息跳过（含 action=started 握手消息）
+  if (msg.action && msg.action !== 'result') return;
+  if (msg.msg_type && msg.msg_type !== 'result') return;
+
+  // 解析 data
+  let result;
+  try {
+    result = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data;
+    if (result === null || typeof result !== 'object') return;
+  } catch (e) { return; }
+
+  const st = result?.cn?.st;
+  if (!st) return;
+
+  const sentence = extractSentence(st);
+  const type = st.type;
+
+  if (type === '1') {
+    Voice.interimText = sentence;
+  } else {
+    Voice.finalText += sentence;
+    Voice.interimText = '';
+  }
+  renderTranscript();
+}
+
+// 从 st.rt.ws.cw.w 提取整句文本
+function extractSentence(st) {
+  let text = '';
+  const rts = st.rt || [];
+  for (const rt of rts) {
+    const wss = rt.ws || [];
+    for (const ws of wss) {
+      const cws = ws.cw || [];
+      for (const cw of cws) {
+        if (cw.w) text += cw.w;
+      }
+    }
+  }
+  return text;
+}
+
+// ===================== Voice: UI 渲染 =====================
+function renderTranscript() {
+  const el = document.getElementById('voice_transcript');
+  if (!Voice.finalText && !Voice.interimText) {
+    el.innerHTML = '<span class="voice-hint">点击"开始录音"后，这里会实时显示识别到的文字</span>';
+    return;
+  }
+  const final = escapeHtml(Voice.finalText);
+  const interim = Voice.interimText ? `<span style="color:var(--gray-500);">${escapeHtml(Voice.interimText)}</span>` : '';
+  el.innerHTML = final + interim;
+  el.scrollTop = el.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function setVoiceStatus(text, cls) {
+  const el = document.getElementById('voice_status');
+  el.textContent = text;
+  el.className = 'voice-status' + (cls ? ' ' + cls : '');
+}
+
+// ===================== Voice: 停止与收尾 =====================
+function stopVoice() {
+  if (!Voice.active && !Voice.ws) { cleanupVoice(); return; }
+  Voice.active = false;
+
+  if (Voice.sendTimer) { clearInterval(Voice.sendTimer); Voice.sendTimer = null; }
+  if (Voice.elapsedTimer) { clearInterval(Voice.elapsedTimer); Voice.elapsedTimer = null; }
+
+  if (Voice.ws) {
+    try {
+      if (Voice.ws.readyState === WebSocket.OPEN) {
+        Voice.ws.send(JSON.stringify({ end: true, sessionId: Voice.sessionId || '' }));
+      }
+      Voice.ws.close();
+    } catch (e) {}
+    Voice.ws = null;
+    Voice.sessionId = null;
+  }
+  cleanupVoice();
+  document.getElementById('btn_voice').classList.remove('recording');
+  document.getElementById('btn_voice').innerHTML = '🎤 开始录音';
+  setVoiceStatus('已停止', '');
+
+  // 停止后将转录文本填入文本框
+  const transcript = Voice.finalText.trim();
+  if (transcript) {
+    const ta = document.getElementById('score_text');
+    if (ta.value.trim()) ta.value += '\n' + transcript;
+    else ta.value = transcript;
+    ta.focus();
+    setVoiceStatus('✅ 已转录到文本框，可编辑后点击"开始解析"', '');
+    document.getElementById('btn_parse').scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+function cleanupVoice() {
+  if (Voice.processor) { try { Voice.processor.disconnect(); } catch(e){} Voice.processor = null; }
+  if (Voice.source) { try { Voice.source.disconnect(); } catch(e){} Voice.source = null; }
+  if (Voice.audioCtx) { try { Voice.audioCtx.close(); } catch(e){} Voice.audioCtx = null; }
+  if (Voice.mediaStream) { Voice.mediaStream.getTracks().forEach(t => t.stop()); Voice.mediaStream = null; }
+  Voice.pcmQueue = [];
+}
+
 // ===================== Step Navigation =====================
 function goStep(n) {
   State.step = n;
@@ -416,6 +748,15 @@ function goStep(n) {
   }
   
   window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // 回到 Step 1 时重置解析按钮状态
+  if (n === 1) {
+    const btn = document.getElementById('btn_parse');
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '🚀 开始解析';
+    }
+  }
 }
 
 // ===================== File Upload =====================
@@ -448,6 +789,7 @@ function handleFiles(fileList) {
         const idCol = headerRow.findIndex(h => /学号|编号|号|序号/.test(h));
         const nameCol = headerRow.findIndex(h => /姓名|名字/.test(h));
         if (idCol === -1) { alert(file.name + '：未找到"学号"列，请检查表头'); return; }
+        if (nameCol === -1) { alert(file.name + '：未找到"姓名"列，请检查表头'); return; }
 
         const validCols = [];
         const validHeaders = [];

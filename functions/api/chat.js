@@ -4,14 +4,14 @@ export async function onRequest({ request, env }) {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
     });
   }
 
   if (!API_KEY || !BASE_URL) {
     return new Response(JSON.stringify({ error: '请先配置 API 环境变量' }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
     });
   }
 
@@ -35,12 +35,15 @@ export async function onRequest({ request, env }) {
     });
 
     if (!response.ok) {
-      const data = await response.json().catch(() => ({ error: {} }));
+      const buf = await response.arrayBuffer();
+      const raw = new TextDecoder('utf-8').decode(buf);
+      let data;
+      try { data = JSON.parse(raw); } catch(e) { data = {}; }
       return new Response(JSON.stringify({
         error: data.error?.message || `HTTP ${response.status}`
       }), {
         status: response.status,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
     }
 
@@ -55,12 +58,14 @@ export async function onRequest({ request, env }) {
         }
       });
     } else {
-      // Non-streaming response
-      const data = await response.json();
+      // Non-streaming response — 用 ArrayBuffer 强制 UTF-8 解码
+      const buf = await response.arrayBuffer();
+      const raw = new TextDecoder('utf-8').decode(buf);
+      const data = JSON.parse(raw);
       const content = data.choices?.[0]?.message?.content || '';
       return new Response(JSON.stringify({ content }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
     }
 
@@ -69,7 +74,7 @@ export async function onRequest({ request, env }) {
       error: error.message || '请求失败'
     }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
     });
   }
 }
