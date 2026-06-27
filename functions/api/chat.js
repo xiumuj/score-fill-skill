@@ -1,4 +1,4 @@
-import { sendLLMRequest, parseNonStreamResponse } from '../../lib/llm-api.js'
+import { sendLLMRequest } from '../../lib/llm-api.js'
 
 export async function onRequest({ request, env }) {
   const { API_KEY, BASE_URL, MODEL } = env
@@ -19,37 +19,23 @@ export async function onRequest({ request, env }) {
 
   try {
     const { message, stream } = await request.json()
-    const llmResp = await sendLLMRequest(API_KEY, BASE_URL, MODEL, message, stream)
+    const resp = await sendLLMRequest(API_KEY, BASE_URL, MODEL, message, stream)
 
-    const response = await fetch(`${BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
-      },
-      body: JSON.stringify({
-        model: MODEL || 'deepseek-chat',
-        temperature: 0,
-        stream: stream,
-        messages: [{ role: 'user', content: userMessage }]
-      })
-    });
-
-    if (!response.ok) {
-      const buf = await response.arrayBuffer();
+    if (!resp.ok) {
+      const buf = await resp.arrayBuffer();
       const raw = new TextDecoder('utf-8').decode(buf);
       let data;
       try { data = JSON.parse(raw); } catch(e) { data = {}; }
       return new Response(JSON.stringify({
-        error: data.error?.message || `HTTP ${llmResp.status}`,
+        error: data.error?.message || `HTTP ${resp.status}`,
       }), {
-        status: response.status,
+        status: resp.status,
         headers: { 'Content-Type': 'application/json; charset=utf-8' }
       });
     }
 
-    if (stream && llmResp.body) {
-      return new Response(llmResp.body, {
+    if (stream && resp.body) {
+      return new Response(resp.body, {
         status: 200,
         headers: {
           'Content-Type': 'text/event-stream',
@@ -57,23 +43,16 @@ export async function onRequest({ request, env }) {
           'Connection': 'keep-alive'
         }
       });
-    } else {
-      // Non-streaming response — 用 ArrayBuffer 强制 UTF-8 解码
-      const buf = await response.arrayBuffer();
-      const raw = new TextDecoder('utf-8').decode(buf);
-      const data = JSON.parse(raw);
-      const content = data.choices?.[0]?.message?.content || '';
-      return new Response(JSON.stringify({ content }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json; charset=utf-8' }
-      });
     }
 
-    const data = await llmResp.json()
-    const content = parseNonStreamResponse(data)
+    const buf = await resp.arrayBuffer();
+    const raw = new TextDecoder('utf-8').decode(buf);
+    const data = JSON.parse(raw);
+    const content = data.choices?.[0]?.message?.content || '';
     return new Response(JSON.stringify({ content }), {
-      status: 200, headers: { 'Content-Type': 'application/json' },
-    })
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
+    });
 
   } catch (error) {
     return new Response(JSON.stringify({

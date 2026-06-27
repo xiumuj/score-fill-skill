@@ -49,3 +49,7 @@ pnpm-debug.log
 # === Deprecated files ===
 proxy.py
 test-api.cjs
+
+# === Real data (do not commit) ===
+*.xlsx
+*.xls

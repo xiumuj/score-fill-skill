@@ -46,14 +46,12 @@
   .card h2 { font-size:1.15rem; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
 
   label { display:block; font-size:.85rem; font-weight:600; color:var(--gray-700); margin-bottom:4px; }
-  input[type="text"], input[type="password"], textarea, select {
+  input[type="text"], textarea {
     width:100%; padding:10px 12px; border:1.5px solid var(--gray-200); border-radius:8px;
     font-size:.9rem; transition:border-color .2s; outline:none; font-family:inherit;
   }
   input:focus, textarea:focus { border-color:var(--primary-light); }
   textarea { resize:vertical; min-height:160px; }
-  .form-row { display:flex; gap:12px; margin-bottom:12px; }
-  .form-row > div { flex:1; }
 
   .btn { padding:10px 22px; border:none; border-radius:8px; font-size:.9rem; font-weight:600; cursor:pointer; transition:all .2s; display:inline-flex; align-items:center; gap:6px; }
   .btn-primary { background:var(--primary); color:#fff; }
@@ -128,20 +126,14 @@
   .parse-progress .progress-footer { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
   .parse-progress .token-count { color:var(--gray-500); font-size:.82rem; }
 
-  .config-status { display:inline-flex; align-items:center; gap:4px; font-size:.8rem; padding:3px 10px; border-radius:10px; }
-  .config-status.ok { background:var(--success-bg); color:#065f46; }
-  .config-status.no { background:var(--danger-bg); color:#991b1b; }
-
   .table-wrap { max-height:400px; overflow-y:auto; }
   .step-panel { display:none; }
   .step-panel.active { display:block; }
 
-  .help-note { font-size:.82rem; color:var(--gray-500); margin-top:6px; }
   .result-table .conflict-tag { font-size:.75rem; color:var(--danger); margin-left:6px; white-space:nowrap; background:var(--danger-bg); padding:1px 6px; border-radius:4px; cursor:help; }
   .result-table input.conflict-input { border-color:var(--danger); background:#fff5f5; }
 
   @media (max-width:600px) {
-    .form-row { flex-direction:column; gap:0; }
     .stepper { gap:0; }
     .step-line { width:20px; }
     .step-label { display:none; }
@@ -284,7 +276,7 @@
         <div class="stream-box" id="stream_box"><span class="cursor"></span></div>
         <div class="progress-footer">
           <span class="token-count" id="token_count">已接收 0 字符</span>
-          <button class="btn btn-sm btn-danger" id="btn_cancel_parse">✕ 取消</button>
+          <button class="btn btn-sm btn-danger" id="btn_cancel_parse" onclick="cancelParse()">✕ 取消</button>
         </div>
       </div>
     </div>
@@ -300,8 +292,8 @@
       <div id="parse_results"></div>
     </div>
     <div class="btn-group">
-      <button class="btn btn-outline" id="btn_back_to_step1">← 上一步</button>
-      <button class="btn btn-success" id="btn_confirm_fill">✅ 确认并填入花名册</button>
+      <button class="btn btn-outline" id="btn_back_to_step1" onclick="goStep(1)">← 上一步</button>
+      <button class="btn btn-success" id="btn_confirm_fill" onclick="doFill()">✅ 确认并填入花名册</button>
     </div>
   </div>
 
@@ -312,8 +304,8 @@
       <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:14px;">点击下方按钮下载已填入成绩的花名册文件。</p>
       <div id="export_list"></div>
       <div class="btn-group" style="margin-top:20px;">
-        <button class="btn btn-primary" id="btn_download_zip">📦 一键下载全部 ZIP</button>
-        <button class="btn btn-outline" id="btn_back_to_step2">← 返回修改</button>
+        <button class="btn btn-primary" id="btn_download_zip" onclick="downloadAllZip()">📦 一键下载全部 ZIP</button>
+        <button class="btn btn-outline" id="btn_back_to_step2" onclick="goStep(2)">← 返回修改</button>
       </div>
     </div>
   </div>
@@ -336,14 +328,11 @@ const State = {
   conflicts: {},
   missing: {},
   filledWorkbooks: {},
-  matchMethod: {},         // { 班级: { 学号: 'exact'|'pinyin'|'llm' } } 语音匹配方式
   _abortController: null,
   _parseElapsedTimer: null
 };
 
 // ===================== Voice (实时语音录入) =====================
-// 完整流程: getUserMedia → 16k PCM(1280B/40ms) → 直连讯飞 wss → ASR 流式文本
-//          → L1 本地姓名纠错(实时显示) → L2 LLM 纠错+提取分数(防抖) → 写入 parsedScores
 const Voice = {
   active: false,            // 是否正在录音
   ws: null,                 // WebSocket 连接
@@ -1166,12 +1155,6 @@ async function downloadAllZip() {
   const a = document.createElement('a');
   a.href = url; a.download = '成绩填写结果.zip'; a.click();
   URL.revokeObjectURL(url);
-}
-
-// ===================== Helpers =====================
-function showMsg(id, text, type) {
-  const cls = { info: 'msg-info', success: 'msg-success', warning: 'msg-warning', error: 'msg-error' };
-  document.getElementById(id).innerHTML = '<div class="msg ' + (cls[type] || 'msg-info') + '">' + text + '</div>';
 }
 
 // ===================== Init =====================

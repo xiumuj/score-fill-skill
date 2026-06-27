@@ -1,5 +1,5 @@
 import { defineConfig, loadEnv } from 'vite'
-import { sendLLMRequest, parseNonStreamResponse, parseSSEChunk } from './lib/llm-api.js'
+import { sendLLMRequest, parseNonStreamResponse } from './lib/llm-api.js'
 
 function createApiHandler(env) {
   const { API_KEY, BASE_URL, MODEL } = env
