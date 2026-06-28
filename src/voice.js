@@ -3,7 +3,6 @@ const SILENCE_TIMEOUT = 10000
 const Voice = {
   active: false,
   ws: null,
-  provider: null,
   mediaStream: null,
   audioCtx: null,
   processor: null,
@@ -13,9 +12,7 @@ const Voice = {
   elapsedTimer: null,
   elapsedSec: 0,
   interimText: '',
-  finalText: '',
-  sessionId: null,
-  silenceTimer: null
+  finalText: ''
 }
 
 window.Voice = Voice
@@ -82,11 +79,39 @@ function onWsOpen() {
   Voice.interimText = ''; Voice.finalText = ''
   renderTranscript()
 
+  const configMsg = {
+    app: {
+      appid: '',
+      token: '',
+      cluster: ''
+    },
+    user: {
+      uid: ''
+    },
+    audio: {
+      format: 'pcm',
+      rate: 16000,
+      bits: 16,
+      channel: 1,
+      codec: 'raw'
+    },
+    request: {
+      reqid: String(Date.now()),
+      sequence: 1,
+      language: 'zh-CN',
+      domain: 'common',
+      access_token: '',
+      extension: ''
+    }
+  }
+  Voice.ws.send(JSON.stringify(configMsg))
+
   Voice.pcmQueue = []
   Voice.sendTimer = setInterval(() => {
     if (!Voice.ws || Voice.ws.readyState !== WebSocket.OPEN) return
     while (Voice.pcmQueue.length) {
-      Voice.ws.send(Voice.pcmQueue.shift())
+      const pcm = Voice.pcmQueue.shift()
+      Voice.ws.send(pcm)
     }
   }, 40)
 
@@ -99,94 +124,32 @@ function onWsOpen() {
   resetSilenceTimer()
 }
 
-function extractXunfeiSentence(st) {
-  let text = ''
-  const rts = st.rt || []
-  for (const rt of rts) {
-    const wss = rt.ws || []
-    for (const ws of wss) {
-      const cws = ws.cw || []
-      for (const cw of cws) {
-        if (cw.w) text += cw.w
-      }
-    }
-  }
-  return text
-}
-
-function onXunfeiMessage(ev) {
+function onDoubaoMessage(ev) {
   let msg
   try { msg = JSON.parse(ev.data) } catch (e) { return }
 
-  if (msg.sid) Voice.sessionId = msg.sid
-
-  if (msg.action === 'error') {
-    setVoiceStatus('讯飞错误: ' + (msg.desc || JSON.stringify(msg.data || {})), 'error')
-    return
-  }
-  if (msg.msg_type === 'error') {
-    setVoiceStatus('讯飞错误: ' + (msg.desc || JSON.stringify(msg.data || {})), 'error')
-    return
-  }
-  if (msg.msg_type === 'result' && msg.res_type === 'frc') {
-    setVoiceStatus('讯飞错误: ' + (msg.data?.desc || '功能异常'), 'error')
+  if (msg.code !== 1000 && msg.code !== 0) {
+    setVoiceStatus('豆包错误: ' + (msg.message || JSON.stringify(msg)), 'error')
     return
   }
 
-  if (msg.action && msg.action !== 'result') return
-  if (msg.msg_type && msg.msg_type !== 'result') return
-
-  let result
-  try {
-    result = typeof msg.data === 'string' ? JSON.parse(msg.data) : msg.data
-    if (result === null || typeof result !== 'object') return
-  } catch (e) { return }
-
-  const st = result?.cn?.st
-  if (!st) return
-
-  const sentence = extractXunfeiSentence(st)
-  const type = st.type
-
-  if (type === '1') {
-    Voice.interimText = sentence
-  } else {
-    Voice.finalText += sentence
-    Voice.interimText = ''
-  }
-  if (sentence) resetSilenceTimer()
-  renderTranscript()
-}
-
-function onTencentMessage(ev) {
-  let msg
-  try { msg = JSON.parse(ev.data) } catch (e) { return }
-
-  if (msg.code !== 0) {
-    setVoiceStatus('腾讯错误: ' + (msg.message || JSON.stringify(msg)), 'error')
-    return
-  }
-
-  if (msg.final === 1) return
-
-  const result = msg.result
-  if (!result) return
-
-  const text = result.voice_text_str || ''
-
-  if (result.slice_type === 1) {
-    Voice.interimText = text
-  } else if (result.slice_type === 2) {
+  if (msg.code === 1000 && msg.is_final) {
+    const text = msg.result?.text || ''
     if (text) {
       Voice.finalText += text
       Voice.interimText = ''
     }
-  } else if (result.slice_type === 0) {
-    Voice.interimText = text || Voice.interimText
+    if (text) resetSilenceTimer()
+    renderTranscript()
+    return
   }
 
-  if (text) resetSilenceTimer()
-  renderTranscript()
+  const text = msg.result?.text || ''
+  if (text) {
+    Voice.interimText = text
+    resetSilenceTimer()
+    renderTranscript()
+  }
 }
 
 export async function toggleVoice() {
@@ -206,23 +169,14 @@ async function fetchWsUrl(url) {
 async function startVoice() {
   if (!window.State.uploadedFiles.length) { alert('请先上传花名册，再开始语音录入'); return }
 
-  setVoiceStatus('鉴权中（腾讯云）...', '')
-  let wsUrl, provider
+  setVoiceStatus('鉴权中（豆包）...', '')
+  let wsUrl
   try {
-    wsUrl = await fetchWsUrl('/api/tx-sign')
-    provider = 'tencent'
-  } catch (e1) {
-    setVoiceStatus('腾讯云鉴权失败，尝试讯飞...', '')
-    try {
-      wsUrl = await fetchWsUrl('/api/xf-sign')
-      provider = 'xunfei'
-    } catch (e2) {
-      setVoiceStatus('所有语音服务均不可用: ' + e2.message, 'error')
-      return
-    }
+    wsUrl = await fetchWsUrl('/api/doubao-sign')
+  } catch (e) {
+    setVoiceStatus('豆包语音服务不可用: ' + e.message, 'error')
+    return
   }
-
-  Voice.provider = provider
 
   setVoiceStatus('连接麦克风...', '')
   try {
@@ -250,8 +204,9 @@ async function startVoice() {
     cleanupVoice()
     return
   }
+
   Voice.ws.onopen = onWsOpen
-  Voice.ws.onmessage = provider === 'tencent' ? onTencentMessage : onXunfeiMessage
+  Voice.ws.onmessage = onDoubaoMessage
   Voice.ws.onerror = () => {
     setVoiceStatus('WebSocket 连接失败', 'error')
     Voice.active = false
@@ -281,15 +236,10 @@ function stopVoice() {
   if (Voice.ws) {
     try {
       if (Voice.ws.readyState === WebSocket.OPEN) {
-        const stopMsg = Voice.provider === 'tencent'
-          ? JSON.stringify({ type: 'end' })
-          : JSON.stringify({ end: true, sessionId: Voice.sessionId || '' })
-        Voice.ws.send(stopMsg)
+        Voice.ws.close()
       }
-      Voice.ws.close()
     } catch (e) {}
     Voice.ws = null
-    Voice.sessionId = null
   }
   cleanupVoice()
   document.getElementById('btn_voice').classList.remove('recording')
@@ -305,7 +255,6 @@ function stopVoice() {
     setVoiceStatus('✅ 已转录到文本框，可编辑后点击"开始解析"', '')
     document.getElementById('btn_parse').scrollIntoView({ behavior: 'smooth' })
   }
-  Voice.provider = null
 }
 
 window.toggleVoice = toggleVoice

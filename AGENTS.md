@@ -43,14 +43,14 @@ npm run cf:deploy # 部署到 Cloudflare Pages
 │   ├── ui.js              # 全部 DOM 操作: 导航/渲染/消息/进度面板
 │   ├── llm.js             # callLLM() + testLLM() (fetch /api/chat + SSE 解析)
 │   ├── upload.js          # Excel 拖拽/上传 + XLSX 解析 (写 State)
-│   ├── voice.js           # 录音控制 + 讯飞 WSS ASR (Voice 内部状态)
+│   ├── voice.js           # 录音控制 + 豆包 WSS ASR (Voice 内部状态)
 │   ├── parse.js           # doParse() 编排: 调 LLM → 归一化 → 冲突检测
 │   ├── export.js          # 填成绩 + 生成 XLSX + ZIP 打包下载
 │   └── cancel.js          # 取消解析 (中断 fetch + 清理定时器)
 ├── lib/
 │   └── llm-api.js        # LLM 请求构建 (vite + CF 共享)
 ├── functions/api/chat.js # Cloudflare Functions LLM 代理 (生产部署)
-├── functions/api/xf-sign.js # Cloudflare Functions 讯飞签名接口
+├── functions/api/doubao-sign.js # Cloudflare Functions 豆包 ASR 签名接口
 └── vite.config.js        # api-handler 插件 + 构建配置
 ```
 
@@ -88,3 +88,17 @@ wrangler pages deploy dist --project-name=score-fill-skill
 ```
 
 生产环境需在 Cloudflare Dashboard 设置 `API_KEY` 作为 Secret, `BASE_URL` 和 `MODEL` 可从 `wrangler.toml [vars]` 自动注入。
+
+## 模型配置
+
+| 模型 | 用途 | 配置 |
+|------|------|------|
+| seed1.8 | LLM 文本生成 | BASE_URL, MODEL |
+| 豆包 ASR | 实时语音识别 | DOUBAO_APP_ID, DOUBAO_ACCESS_KEY_ID, DOUBAO_ACCESS_KEY_SECRET |
+
+生产环境需额外设置：
+```bash
+wrangler pages secret put DOUBAO_APP_ID
+wrangler pages secret put DOUBAO_ACCESS_KEY_ID
+wrangler pages secret put DOUBAO_ACCESS_KEY_SECRET
+```

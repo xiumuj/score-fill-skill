@@ -4,24 +4,18 @@ pages_build_output_dir = "dist"
 
 # 环境变量配置（部署时自动同步到 Cloudflare Pages）
 [vars]
-MODEL = "glm-4-flash"
-BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+MODEL = "seed1.8"
+BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 # ⚠️ 敏感信息（如 API_KEY）请使用以下方式设置：
 # 1. 在 Cloudflare Dashboard 中手动添加
 # 2. 使用命令: wrangler secret put API_KEY
 # 3. 通过 GitHub Actions Secrets（推荐）
 
-# 讯飞实时语音转写大模型版 (RTASR LLM) — 备用
-#   wrangler pages secret put XF_APP_ID
-#   wrangler pages secret put XF_ACCESS_KEY_ID
-#   wrangler pages secret put XF_ACCESS_KEY_SECRET
-# 文档: https://www.xfyun.cn/doc/spark/asr_llm/rtasr_llm.html
-
-# 腾讯云实时语音识别 (ASR) — 主用
-# 云端设置:
-#   wrangler pages secret put TENCENT_APP_ID
-#   wrangler pages secret put TENCENT_SECRET_ID
-#   wrangler pages secret put TENCENT_SECRET_KEY
-# 文档: https://cloud.tencent.com/document/product/1093/48982
+# 豆包语音识别 (ASR) — 实时语音转写
+# 环境变量:
+#   wrangler pages secret put DOUBAO_APP_ID
+#   wrangler pages secret put DOUBAO_ACCESS_KEY_ID
+#   wrangler pages secret put DOUBAO_ACCESS_KEY_SECRET
+# 文档: https://www.volcengine.com/docs/ASR/5087375
 

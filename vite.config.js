@@ -1,5 +1,4 @@
 import { defineConfig, loadEnv } from 'vite'
-import { createHmac, randomUUID } from 'crypto'
 import { readFileSync, existsSync } from 'fs'
 import { sendLLMRequest, parseNonStreamResponse } from './lib/llm-api.js'
 
@@ -70,66 +69,56 @@ function createApiHandler(env) {
   }
 }
 
-function createXfSignHandler(env) {
-  const { XF_APP_ID, XF_ACCESS_KEY_ID, XF_ACCESS_KEY_SECRET } = env
-  return async (req, res, next) => {
-    if (req.url !== '/api/xf-sign' || req.method !== 'POST') return next()
-    if (!XF_APP_ID || !XF_ACCESS_KEY_ID || !XF_ACCESS_KEY_SECRET) {
-      res.statusCode = 500
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: '请先配置讯飞环境变量' }))
-      return
-    }
-    try {
-      const now = new Date()
-      const tzOffset = now.getTimezoneOffset()
-      const tzSign = tzOffset <= 0 ? '+' : '-'
-      const pad = n => String(n).padStart(2, '0')
-      const tzHours = pad(Math.abs(Math.floor(tzOffset / 60)))
-      const tzMins = pad(Math.abs(tzOffset % 60))
-      const utc = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}${tzSign}${tzHours}${tzMins}`
-      const params = { appId: XF_APP_ID, accessKeyId: XF_ACCESS_KEY_ID, utc, lang: 'autodialect', audio_encode: 'pcm_s16le', samplerate: '16000' }
-      const keys = Object.keys(params).sort()
-      const baseStr = keys.map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&')
-      const sig = createHmac('sha1', XF_ACCESS_KEY_SECRET).update(baseStr).digest('base64')
-      const wsUrl = `wss://office-api-ast-dx.iflyaisol.com/ast/communicate/v1?${baseStr}&signature=${encodeURIComponent(sig)}`
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ wsUrl }))
-    } catch (e) {
-      res.statusCode = 500
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: e.message }))
-    }
-  }
+async function hmacSha256Base64(secret, message) {
+  const enc = new TextEncoder()
+  const keyData = enc.encode(secret)
+  const msgData = enc.encode(message)
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false, ['sign']
+  )
+  const sigBuf = await crypto.subtle.sign('HMAC', cryptoKey, msgData)
+  const bytes = new Uint8Array(sigBuf)
+  let bin = ''
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+  return btoa(bin)
 }
 
-function createTxSignHandler(env) {
-  const { TENCENT_APP_ID, TENCENT_SECRET_ID, TENCENT_SECRET_KEY } = env
+async function getDoubaoAccessToken(appId, accessKeyId, accessKeySecret) {
+  const host = 'open.volcengineapi.com'
+  const path = '/api/v3/oauth/token'
+  const method = 'POST'
+  const now = new Date()
+  const date = now.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0, 15) + 'Z'
+  const signedHeaders = 'host;x-date'
+  const authString = `HMAC-SHA256\n${method}\n${path}\n\nhost:${host}\nx-date:${date}\n\n${signedHeaders}`
+  const signature = await hmacSha256Base64(accessKeySecret, authString)
+  const authHeader = `HMAC-SHA256 Credential=${accessKeyId}/${date.slice(0, 8)}/cn-beijing/asr/request, SignedHeaders=${signedHeaders}, Signature=${signature}`
+  const resp = await fetch(`https://${host}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Host': host, 'X-Date': date, 'Authorization': authHeader },
+    body: JSON.stringify({ grant_type: 'client_credentials', client_id: appId, client_secret: accessKeySecret })
+  })
+  if (!resp.ok) throw new Error('获取 access_token 失败')
+  const data = await resp.json()
+  return data.access_token
+}
+
+function createDoubaoSignHandler(env) {
+  const { DOUBAO_APP_ID, DOUBAO_ACCESS_KEY_ID, DOUBAO_ACCESS_KEY_SECRET } = env
   return async (req, res, next) => {
-    if (req.url !== '/api/tx-sign' || req.method !== 'POST') return next()
-    if (!TENCENT_APP_ID || !TENCENT_SECRET_ID || !TENCENT_SECRET_KEY) {
+    if (req.url !== '/api/doubao-sign' || req.method !== 'POST') return next()
+    if (!DOUBAO_APP_ID || !DOUBAO_ACCESS_KEY_ID || !DOUBAO_ACCESS_KEY_SECRET) {
       res.statusCode = 500
       res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: '请先配置腾讯云环境变量' }))
+      res.end(JSON.stringify({ error: '请先配置豆包环境变量' }))
       return
     }
     try {
-      const now = Math.floor(Date.now() / 1000)
-      const params = {
-        secretid: TENCENT_SECRET_ID,
-        timestamp: String(now),
-        expired: String(now + 86400),
-        nonce: String(Math.floor(Math.random() * 10000000000)),
-        engine_model_type: '16k_zh',
-        voice_id: randomUUID(),
-        voice_format: '1',
-        needvad: '1',
-      }
-      const keys = Object.keys(params).sort()
-      const queryStr = keys.map(k => `${k}=${encodeURIComponent(params[k])}`).join('&')
-      const signStr = `asr.cloud.tencent.com/asr/v2/${TENCENT_APP_ID}?${queryStr}`
-      const sig = createHmac('sha1', TENCENT_SECRET_KEY).update(signStr).digest('base64')
-      const wsUrl = `wss://${signStr}&signature=${encodeURIComponent(sig)}`
+      const token = await getDoubaoAccessToken(DOUBAO_APP_ID, DOUBAO_ACCESS_KEY_ID, DOUBAO_ACCESS_KEY_SECRET)
+      const params = new URLSearchParams({ token, cluster: 'volcengine_streaming_common', language: 'zh-CN', sample_rate: '16000', format: 'pcm' })
+      const wsUrl = `wss://openspeech.bytedance.com/api/v2/asr?${params.toString()}`
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify({ wsUrl }))
     } catch (e) {
@@ -147,8 +136,7 @@ export default defineConfig(({ mode }) => {
       name: 'api-handler',
       configureServer(server) {
         server.middlewares.use(createApiHandler(env))
-        server.middlewares.use(createXfSignHandler(env))
-        server.middlewares.use(createTxSignHandler(env))
+        server.middlewares.use(createDoubaoSignHandler(env))
       },
     }],
     build: {
