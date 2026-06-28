@@ -69,6 +69,17 @@ npm run cf:deploy # 部署到 Cloudflare Pages
 - `jszip`: 打包 ZIP 下载, 使用 `import JSZip from 'jszip'`
 - `vite` (devDependency): 构建工具
 
+## 预览链路
+
+项目为 **Web 预览型**，通过 Coze 平台标准预览链路提供。
+
+- 预览端口：5000
+- 预览入口：`scripts/coze-preview-build.sh` + `scripts/coze-preview-run.sh`
+- 构建脚本：pnpm install
+- 运行脚本：pnpm exec vite --host 0.0.0.0 --port 5000
+
+`.coze` 配置位于工作区根目录 `/workspace/projects/.coze`，与项目目录重合。
+
 ## 部署
 
 ```bash
