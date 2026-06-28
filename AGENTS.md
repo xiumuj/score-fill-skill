@@ -93,10 +93,16 @@ wrangler pages deploy dist --project-name=score-fill-skill
 
 | 模型 | 用途 | 配置 |
 |------|------|------|
-| seed1.8 | LLM 文本生成 | BASE_URL, MODEL |
-| 豆包 ASR | 实时语音识别 | DOUBAO_APP_ID, DOUBAO_ACCESS_KEY_ID, DOUBAO_ACCESS_KEY_SECRET |
+| doubao-seed-1.8 | LLM 文本生成 | 使用内置 `coze-coding-dev-sdk`，自动注入凭证 |
+| 豆包 ASR | 实时语音识别 | 需用户提供火山引擎凭证（见下方） |
 
-生产环境需额外设置：
+**LLM**：使用平台内置 SDK，无需配置 API_KEY：
+```javascript
+import { LLMClient, Config } from 'coze-coding-dev-sdk'
+const client = new LLMClient(new Config())
+```
+
+**实时语音识别**：SDK 的 ASR 是离线批量识别，不支持实时流式。此功能需用户提供豆包（火山引擎）凭证：
 ```bash
 wrangler pages secret put DOUBAO_APP_ID
 wrangler pages secret put DOUBAO_ACCESS_KEY_ID

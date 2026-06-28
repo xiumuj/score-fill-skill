@@ -1,6 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import { readFileSync, existsSync } from 'fs'
-import { sendLLMRequest, parseNonStreamResponse } from './lib/llm-api.js'
+import { LLMClient, Config } from 'coze-coding-dev-sdk'
 
 function loadDotDevVars(root) {
   const path = root + '/.dev.vars'
@@ -14,52 +14,45 @@ function loadDotDevVars(root) {
 }
 
 function createApiHandler(env) {
-  const { API_KEY, BASE_URL, MODEL } = env
+  const { COZE_API_KEY } = env
 
   return async (req, res, next) => {
     if (req.url !== '/api/chat' || req.method !== 'POST') return next()
-    if (!API_KEY || !BASE_URL) {
-      res.statusCode = 500
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: '请先配置 API 环境变量（API_KEY / BASE_URL）' }))
-      return
-    }
 
     try {
       const chunks = []
       for await (const chunk of req) chunks.push(chunk)
       const { message, stream } = JSON.parse(Buffer.concat(chunks).toString())
 
-      const llmResp = await sendLLMRequest(API_KEY, BASE_URL, MODEL, message, stream)
+      const config = new Config({ apiKey: COZE_API_KEY })
+      const client = new LLMClient(config)
 
-      if (!llmResp.ok) {
-        const data = await llmResp.json().catch(() => ({}))
-        res.statusCode = llmResp.status
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ error: data.error?.message || `HTTP ${llmResp.status}` }))
-        return
-      }
-
-      if (stream && llmResp.body) {
+      if (stream) {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
           'Connection': 'keep-alive',
         })
-        const reader = llmResp.body.getReader()
-        const pump = async () => {
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) { res.end(); break }
-            res.write(value)
+
+        const streamResponse = client.stream(
+          [{ role: 'user', content: message }],
+          { model: 'doubao-seed-1-8-251228', temperature: 0 }
+        )
+
+        for await (const chunk of streamResponse) {
+          if (chunk.content) {
+            res.write(`data: ${JSON.stringify({ content: chunk.content.toString() })}\n\n`)
           }
         }
-        pump().catch(() => res.end())
+        res.write('data: [DONE]\n\n')
+        res.end()
       } else {
-        const data = await llmResp.json()
-        const content = parseNonStreamResponse(data)
+        const response = await client.invoke(
+          [{ role: 'user', content: message }],
+          { model: 'doubao-seed-1-8-251228', temperature: 0 }
+        )
         res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ content }))
+        res.end(JSON.stringify({ content: response.content }))
       }
     } catch (e) {
       res.statusCode = 500

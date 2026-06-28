@@ -2,11 +2,6 @@ name = "score-fill-skill"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "dist"
 
-# 环境变量配置（部署时自动同步到 Cloudflare Pages）
-[vars]
-MODEL = "seed1.8"
-BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-
 # ⚠️ 敏感信息（如 API_KEY）请使用以下方式设置：
 # 1. 在 Cloudflare Dashboard 中手动添加
 # 2. 使用命令: wrangler secret put API_KEY

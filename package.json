@@ -11,8 +11,9 @@
     "cf:deploy": "wrangler pages deploy dist"
   },
   "dependencies": {
-    "xlsx": "^0.18.5",
-    "jszip": "^3.10.1"
+    "coze-coding-dev-sdk": "^0.7.24",
+    "jszip": "^3.10.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "vite": "^6.0.0"
